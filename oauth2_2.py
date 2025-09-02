@@ -5,6 +5,8 @@ import os
 import secrets
 from urllib.parse import urlencode
 
+# 禁用SSL验证
+ssl._create_default_https_context = ssl._create_unverified_context
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 app = Flask(__name__)
