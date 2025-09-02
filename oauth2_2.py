@@ -4,6 +4,7 @@ from datetime import datetime
 import os
 import secrets
 from urllib.parse import urlencode
+import ssl
 
 # 禁用SSL验证
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -13,9 +14,9 @@ app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
 app.config["SERVER_NAME"] = "192.168.20.122:5010"
 
-# SSO 接口端点配置（常量部分）
-SSO_BASE_URL = "http://192.168.20.122:31240/sso"
-REDIRECT_URI = "http://192.168.20.122:5010/callback"
+# SSO 接口端点配置（使用HTTPS）
+SSO_BASE_URL = "https://192.168.20.122:31240/sso"
+REDIRECT_URI = "https://192.168.20.122:5010/callback"
 AUTHORIZATION_URL = f"{SSO_BASE_URL}/oauth2/authorize"
 TOKEN_URL = f"{SSO_BASE_URL}/oauth2/token"
 REVOKE_URL = f"{SSO_BASE_URL}/oauth2/revoke"
@@ -30,14 +31,12 @@ def home():
 @app.route('/login')
 def login():
     """启动OAuth授权流程"""
-    # 从请求参数获取client_id和client_secret
     client_id = request.args.get('client_id')
     client_secret = request.args.get('client_secret')
     
     if not client_id or not client_secret:
         return jsonify({"error": "client_id和client_secret参数必填"}), 400
     
-    # 将client_id存入session供callback使用
     session['client_id'] = client_id
     session['client_secret'] = client_secret
     
@@ -58,11 +57,9 @@ def login():
 def callback():
     """处理授权回调"""
     try:
-        # 验证state参数防止CSRF攻击
         if request.args.get('state') != session.get('oauth_state'):
             return redirect(url_for('error', msg="无效的会话状态"))
 
-        # 从session获取client_id和client_secret
         client_id = session.get('client_id')
         client_secret = session.get('client_secret')
         
@@ -84,11 +81,10 @@ def callback():
         }
         
         get_token_url = f"{TOKEN_URL}?{urlencode(params)}"
-        response = sso.get(get_token_url)
+        response = sso.get(get_token_url, verify=False)  # 禁用SSL验证
         body = response.json()
         token = body['data']
 
-        # 存储令牌和用户信息
         session['oauth_token'] = token
         session['user'] = {
             'access_token': token['access_token'],
@@ -107,4 +103,9 @@ def error():
     return render_template('error.html', error=error_msg)
 
 if __name__ == '__main__':
-    app.run(port=5010, debug=True)
+    # 启用HTTPS
+    app.run(
+        port=5010,
+        debug=True,
+        ssl_context='adhoc'  # 使用临时自签名证书
+    )
